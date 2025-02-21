@@ -1,44 +1,93 @@
-var builder = WebApplication.CreateBuilder(args);
+using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
+using System;
+using System.Text;
+using Newtonsoft.Json;
 
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
-var app = builder.Build();
-
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+class NotificationService
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    public static void Main()
+    {
+        var factory = new ConnectionFactory() { HostName = "localhost" };
+        using var connection = factory.CreateConnection();
+        using var channel = connection.CreateModel();
+
+        //  Ensure queue name matches the producer
+        string queueName = "task_queue"; // Producer must use the same queue name
+
+        channel.QueueDeclare(queue: queueName,
+                             durable: false,
+                             exclusive: false,
+                             autoDelete: false,
+                             arguments: null);
+
+        var consumer = new EventingBasicConsumer(channel);
+        consumer.Received += (model, ea) =>
+        {
+            var body = ea.Body.ToArray();
+            var message = Encoding.UTF8.GetString(body);
+
+            try
+            {
+                Console.WriteLine($" [NotificationService] Raw Received Message: {message}");
+
+                // Deserialize into a strongly-typed object
+                var taskEvent = JsonConvert.DeserializeObject<TaskEvent>(message);
+
+                if (taskEvent != null && !string.IsNullOrEmpty(taskEvent.Type))
+                {
+                    Console.WriteLine($" [NotificationService] Event Type: {taskEvent.Type}");
+
+                    switch (taskEvent.Type)
+                    {
+                        case "TaskCreated":
+                            Console.WriteLine($"[+] New Task Created: {taskEvent.Payload.Title}");
+                            break;
+
+                        case "TaskUpdated":
+                            Console.WriteLine($"[~] Task Updated: {taskEvent.Payload.Title}");
+                            break;
+
+                        case "TaskDeleted":
+                            Console.WriteLine($"[-] Task Deleted with ID: {taskEvent.Payload.Id}");
+                            break;
+
+                        default:
+                            Console.WriteLine($"[!] Unknown Event Type: {taskEvent.Type}");
+                            break;
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($" [NotificationService] Invalid event received: {message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($" [NotificationService] Error processing message: {ex.Message}");
+            }
+        };
+
+        channel.BasicConsume(queue: queueName,
+                             autoAck: true,
+                             consumer: consumer);
+
+        Console.WriteLine(" [*] Waiting for messages... Press [Ctrl+C] to exit.");
+        while (true) { } // Keep the service running
+    }
 }
 
-app.UseHttpsRedirection();
-
-var summaries = new[]
+// Strongly-typed model for deserialization
+public class TaskEvent
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+    public string Type { get; set; }
+    public TaskPayload Payload { get; set; }
+}
 
-app.MapGet("/weatherforecast", () =>
+public class TaskPayload
 {
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast")
-.WithOpenApi();
-
-app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
+    public int Id { get; set; }
+    public string Title { get; set; }
+    public string Description { get; set; }
+    public bool IsCompleted { get; set; }
 }

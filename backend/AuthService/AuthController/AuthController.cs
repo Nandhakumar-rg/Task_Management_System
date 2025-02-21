@@ -24,6 +24,11 @@ public class AuthController : ControllerBase
         _signInManager = signInManager;
         _context = context;
         _configuration = configuration;
+
+        // Print the JWT Key, Issuer, and Audience
+        Console.WriteLine("\n JWT Key Used in AuthController: " + _configuration["Jwt:Key"]);
+        Console.WriteLine(" JWT Issuer in AuthController: " + _configuration["Jwt:Issuer"]);
+        Console.WriteLine(" JWT Audience in AuthController: " + _configuration["Jwt:Audience"]);
     }
 
     // 🔹 User Registration
@@ -115,6 +120,9 @@ public class AuthController : ControllerBase
     // 🔹 Generate JWT Token
     private JwtSecurityToken GenerateJwtToken(ApplicationUser user)
     {
+        var keyString = _configuration["Jwt:Key"];
+        Console.WriteLine("\n🔹 JWT Key inside GenerateJwtToken: " + keyString);
+
         var userRoles = _userManager.GetRolesAsync(user).Result;
         var claims = new[]
         {

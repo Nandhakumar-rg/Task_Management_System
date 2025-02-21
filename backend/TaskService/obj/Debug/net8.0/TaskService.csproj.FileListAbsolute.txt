@@ -168,3 +168,7 @@ E:\Full-Stack Task Management System\TaskManagementSystem\backend\TaskService\ob
 E:\Full-Stack Task Management System\TaskManagementSystem\backend\TaskService\obj\Debug\net8.0\ref\TaskService.dll
 E:\Full-Stack Task Management System\TaskManagementSystem\backend\TaskService\bin\Debug\net8.0\Microsoft.AspNetCore.Authentication.JwtBearer.dll
 E:\Full-Stack Task Management System\TaskManagementSystem\backend\TaskService\bin\Debug\net8.0\Microsoft.Bcl.Memory.dll
+E:\Full-Stack Task Management System\TaskManagementSystem\backend\TaskService\bin\Debug\net8.0\Pipelines.Sockets.Unofficial.dll
+E:\Full-Stack Task Management System\TaskManagementSystem\backend\TaskService\bin\Debug\net8.0\StackExchange.Redis.dll
+E:\Full-Stack Task Management System\TaskManagementSystem\backend\TaskService\bin\Debug\net8.0\RabbitMQ.Client.dll
+E:\Full-Stack Task Management System\TaskManagementSystem\backend\TaskService\bin\Debug\net8.0\Newtonsoft.Json.dll

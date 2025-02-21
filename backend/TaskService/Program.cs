@@ -9,6 +9,8 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System.Security.Claims;
+using StackExchange.Redis;
+using RabbitMQ.Client;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +22,45 @@ builder.Services.AddSwaggerGen();
 // Add Database Context
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("TaskDB")));
+
+// Add Redis Configuration
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
+{
+    var redisConnection = builder.Configuration.GetConnectionString("Redis");
+    return ConnectionMultiplexer.Connect(redisConnection);
+});
+
+// Register RabbitMQ Connection Factory
+builder.Services.AddSingleton<IConnectionFactory>(sp => new ConnectionFactory
+{
+    HostName = "localhost", // Change if using Docker
+    DispatchConsumersAsync = true
+});
+
+// Register RabbitMQ Connection
+builder.Services.AddSingleton<IConnection>(sp =>
+{
+    var factory = sp.GetRequiredService<IConnectionFactory>();
+    return factory.CreateConnection();
+});
+
+// Register RabbitMQ Channel (for message publishing)
+builder.Services.AddSingleton<IModel>(sp =>
+{
+    var connection = sp.GetRequiredService<IConnection>();
+    var channel = connection.CreateModel();
+
+    // Declare the queue to ensure it exists
+    channel.QueueDeclare(queue: "task_queue",
+                         durable: false,
+                         exclusive: false,
+                         autoDelete: false,
+                         arguments: null);
+    return channel;
+});
+
+// Register RabbitMQ Producer Service
+builder.Services.AddSingleton<RabbitMQProducer>();
 
 // Configure Authentication (JWT)
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -40,21 +81,38 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
         options.Events = new JwtBearerEvents
         {
+            OnMessageReceived = context =>
+            {
+                var token = context.Request.Headers["Authorization"].ToString();
+                Console.WriteLine("\n Received Authorization Header: " + token);
+
+                if (!string.IsNullOrEmpty(token) && token.StartsWith("Bearer "))
+                {
+                    token = token.Substring(7); // Remove "Bearer " prefix
+                    Console.WriteLine("\n Extracted JWT Token for validation: " + token);
+                }
+                return Task.CompletedTask;
+            },
             OnAuthenticationFailed = context =>
             {
-                Console.WriteLine("Authentication failed: " + context.Exception.Message);
+                Console.WriteLine(" Authentication failed: " + context.Exception.Message);
                 return Task.CompletedTask;
             },
             OnTokenValidated = context =>
             {
-                Console.WriteLine("Token validated for user: " + context.Principal.Identity.Name);
+                Console.WriteLine(" Token validated for user: " + context.Principal.Identity.Name);
                 return Task.CompletedTask;
             }
         };
+
+        // Print the JWT Secret Key to verify it matches in both services
+        Console.WriteLine("\n JWT Key Used: " + builder.Configuration["Jwt:Key"]);
+        Console.WriteLine(" JWT Issuer: " + builder.Configuration["Jwt:Issuer"]);
+        Console.WriteLine(" JWT Audience: " + builder.Configuration["Jwt:Audience"]);
+
     });
 
-
-//  Add Authorization (Fix for your issue)
+// Add Authorization
 builder.Services.AddAuthorization();
 
 builder.Services.AddControllers();
@@ -97,11 +155,9 @@ builder.Services.AddCors(options =>
         });
 });
 
-
-
 var app = builder.Build();
 
-//  Middleware
+// Middleware
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -110,8 +166,11 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors("AllowSpecificOrigins");
+
+// Re-enable authentication if JWT is working
 app.UseAuthentication();
-app.UseAuthorization();  //  Make sure Authorization is added here
+app.UseAuthorization();
+
 app.MapControllers();
 
 app.Run();

@@ -1,44 +1,52 @@
+
+using Ocelot.DependencyInjection;
+using Ocelot.Middleware;
+using Microsoft.OpenApi.Models;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+// Load Ocelot configuration
+builder.Configuration.AddJsonFile("ocelot.json", optional: false, reloadOnChange: true);
+
+// Add Ocelot services
+builder.Services.AddOcelot();
+
+//  Add Swagger configuration for API Gateway
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "API Gateway",
+        Version = "v1",
+        Description = "API Gateway using Ocelot"
+    });
+
+    //  Add Downstream Services' Swagger endpoints
+    c.AddServer(new OpenApiServer { Url = "http://localhost:5280", Description = "TaskService" });
+    c.AddServer(new OpenApiServer { Url = "http://localhost:5058", Description = "AuthService" });
+});
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Enable Swagger Middleware
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "API Gateway V1");
+
+        //  Add Swagger Endpoints for Downstream Services
+        c.SwaggerEndpoint("http://localhost:5280/swagger/v1/swagger.json", "TaskService API");
+        c.SwaggerEndpoint("http://localhost:5058/swagger/v1/swagger.json", "AuthService API");
+    });
 }
 
-app.UseHttpsRedirection();
-
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast")
-.WithOpenApi();
+app.UseRouting();
+app.UseOcelot().Wait(); // Apply Ocelot middleware
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
+
+
